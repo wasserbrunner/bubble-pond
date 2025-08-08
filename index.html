@@ -37,6 +37,7 @@ let animals = [
   {emoji:'🐸', name:'frog'},
   {emoji:'🐤', name:'chick'}
 ];
+const dino = {emoji:'🦖', name:'dinosaur', rare:true, color:'#ffd700', sound:new Audio('https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg')};
 const popSound = new Audio('https://actions.google.com/sounds/v1/cartoon/pop.ogg');
 
 let availableVoices = [];
@@ -50,9 +51,7 @@ function loadVoices() {
 }
 loadVoices();
 
-document.body.addEventListener('click', () => {
-  // This empty click ensures mobile Safari unlocks audio/speech
-}, {once: true});
+document.body.addEventListener('click', () => {}, {once: true});
 
 function resizeCanvas() {
   canvas.width = window.innerWidth;
@@ -72,23 +71,43 @@ class Bubble {
     this.x = x;
     this.y = y;
     this.radius = radius;
-    this.color = randomColor();
+    // 1 in 50 chance for rare dino
+    if (Math.random() < 1/50) {
+      this.color = dino.color;
+      this.animal = dino.emoji;
+      this.animalName = dino.name;
+      this.isRare = true;
+    } else {
+      this.color = randomColor();
+      let animalObj = animals[Math.floor(Math.random() * animals.length)];
+      this.animal = animalObj.emoji;
+      this.animalName = animalObj.name;
+      this.isRare = false;
+    }
     this.vy = - (0.3 + Math.random() * 0.5);
     this.vx = (Math.random() - 0.5) * 0.5;
-    let animalObj = animals[Math.floor(Math.random() * animals.length)];
-    this.animal = animalObj.emoji;
-    this.animalName = animalObj.name;
     this.popped = false;
+    this.popAnimProgress = 0;
     this.animalY = y;
     this.animalVy = 0;
+    this.shards = [];
   }
   update() {
     if (!this.popped) {
       this.x += this.vx;
       this.y += this.vy;
     } else {
-      this.animalY += this.animalVy;
-      this.animalVy += 0.15;
+      if (this.popAnimProgress < 1) {
+        this.popAnimProgress += 0.08;
+        for (let s of this.shards) {
+          s.x += s.vx;
+          s.y += s.vy;
+          s.vy += 0.05;
+        }
+      } else {
+        this.animalY += this.animalVy;
+        this.animalVy += 0.15;
+      }
     }
   }
   draw() {
@@ -111,10 +130,27 @@ class Bubble {
       ctx.fillText(this.animal, this.x, this.y);
       ctx.restore();
     } else {
-      ctx.font = `${this.radius}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(this.animal, this.x, this.animalY);
+      if (this.popAnimProgress < 1) {
+        let ringScale = 1 + this.popAnimProgress * 0.6;
+        ctx.globalAlpha = 1 - this.popAnimProgress;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * ringScale, 0, Math.PI * 2);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = this.color;
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
+        ctx.fillStyle = this.color;
+        for (let s of this.shards) {
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        ctx.font = `${this.radius}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.animal, this.x, this.animalY);
+      }
     }
   }
 }
@@ -132,7 +168,7 @@ function animate() {
     if (b.y + b.radius < 0 && !b.popped) {
       bubbles.splice(i, 1);
     }
-    if (b.animalY > canvas.height && b.popped) {
+    if (b.animalY > canvas.height && b.popped && b.popAnimProgress >= 1) {
       bubbles.splice(i, 1);
     }
   }
@@ -156,10 +192,26 @@ function popBubble(x, y) {
     let dy = y - b.y;
     if (!b.popped && Math.sqrt(dx*dx + dy*dy) <= b.radius) {
       b.popped = true;
+      b.popAnimProgress = 0;
       b.animalY = b.y;
       b.animalVy = -2;
-      popSound.currentTime = 0;
-      popSound.play().catch(()=>{});
+      b.shards = [];
+      for (let s = 0; s < 8; s++) {
+        b.shards.push({
+          x: b.x,
+          y: b.y,
+          vx: Math.cos((s / 8) * Math.PI * 2) * (1.5 + Math.random()),
+          vy: Math.sin((s / 8) * Math.PI * 2) * (1.5 + Math.random()),
+          size: Math.random() * 4 + 2
+        });
+      }
+      if (b.isRare) {
+        dino.sound.currentTime = 0;
+        dino.sound.play().catch(()=>{});
+      } else {
+        popSound.currentTime = 0;
+        popSound.play().catch(()=>{});
+      }
       speakAnimal(b.animalName);
       return true;
     }
@@ -214,4 +266,3 @@ animate();
 </script>
 </body>
 </html>
-
