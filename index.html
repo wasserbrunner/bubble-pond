@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Magic Bubble Pond</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: linear-gradient(#66ccff, #003366);
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+  }
+</style>
+</head>
+<body>
+<canvas id="pond"></canvas>
+<script>
+const canvas = document.getElementById('pond');
+const ctx = canvas.getContext('2d');
+let bubbles = [];
+// Animal emoji to name mapping for speech
+let animals = [
+  {emoji:'🐟', name:'fish'},
+  {emoji:'🦋', name:'butterfly'},
+  {emoji:'🐢', name:'turtle'},
+  {emoji:'🦀', name:'crab'},
+  {emoji:'🐠', name:'tropical fish'},
+  {emoji:'🐸', name:'frog'},
+  {emoji:'🐤', name:'chick'}
+];
+const popSound = new Audio('https://actions.google.com/sounds/v1/cartoon/pop.ogg');
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function randomColor() {
+  const colors = ['#ff9999','#ffcc99','#ffff99','#ccff99','#99ffcc','#99ccff','#cc99ff'];
+  return colors[Math.floor(Math.random() * colors.length)];
+}
+
+class Bubble {
+  constructor(x, y, radius) {
+    this.x = x;
+    this.y = y;
+    this.radius = radius;
+    this.color = randomColor();
+    this.vy = - (0.3 + Math.random() * 0.5);
+    this.vx = (Math.random() - 0.5) * 0.5;
+    let animalObj = animals[Math.floor(Math.random() * animals.length)];
+    this.animal = animalObj.emoji;
+    this.animalName = animalObj.name;
+    this.popped = false;
+    this.animalY = y;
+    this.animalVy = 0;
+  }
+  update() {
+    if (!this.popped) {
+      this.x += this.vx;
+      this.y += this.vy;
+    } else {
+      this.animalY += this.animalVy;
+      this.animalVy += 0.15; // gravity
+    }
+  }
+  draw() {
+    if (!this.popped) {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+      ctx.fillStyle = this.color;
+      ctx.fill();
+      ctx.globalAlpha = 0.3;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.globalAlpha = 1.0;
+
+      ctx.save();
+      ctx.filter = 'grayscale(100%) blur(5px)';
+      ctx.font = `${this.radius}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(this.animal, this.x, this.y);
+      ctx.restore();
+    } else {
+      ctx.font = `${this.radius}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(this.animal, this.x, this.animalY);
+    }
+  }
+}
+
+function createBubble(x, y, size = 100) {
+  bubbles.push(new Bubble(x, y, size));
+}
+
+function animate() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (let i = bubbles.length - 1; i >= 0; i--) {
+    const b = bubbles[i];
+    b.update();
+    b.draw();
+    if (b.y + b.radius < 0 && !b.popped) {
+      bubbles.splice(i, 1);
+    }
+    if (b.animalY > canvas.height && b.popped) {
+      bubbles.splice(i, 1);
+    }
+  }
+  requestAnimationFrame(animate);
+}
+
+function speakAnimal(name) {
+  const utterance = new SpeechSynthesisUtterance(name);
+  utterance.pitch = 1;
+  utterance.rate = 1;
+  utterance.voice = speechSynthesis.getVoices().find(v => v.name.toLowerCase().includes('female')) || null;
+  speechSynthesis.speak(utterance);
+}
+
+function popBubble(x, y) {
+  for (let i = 0; i < bubbles.length; i++) {
+    let b = bubbles[i];
+    let dx = x - b.x;
+    let dy = y - b.y;
+    if (!b.popped && Math.sqrt(dx*dx + dy*dy) <= b.radius) {
+      b.popped = true;
+      b.animalY = b.y;
+      b.animalVy = -2;
+      popSound.currentTime = 0;
+      popSound.play();
+      speakAnimal(b.animalName);
+      return true;
+    }
+  }
+  return false;
+}
+
+let growingBubbles = {};
+
+function startBubble(id, x, y) {
+  growingBubbles[id] = {x, y, size: 50};
+}
+
+function growBubble(id) {
+  if (growingBubbles[id]) {
+    growingBubbles[id].size += 2.5;
+  }
+}
+
+function releaseBubble(id) {
+  if (growingBubbles[id]) {
+    createBubble(growingBubbles[id].x, growingBubbles[id].y, growingBubbles[id].size);
+    delete growingBubbles[id];
+  }
+}
+
+canvas.addEventListener('pointerdown', e => {
+  if (!popBubble(e.clientX, e.clientY)) {
+    startBubble(e.pointerId, e.clientX, e.clientY);
+  }
+});
+canvas.addEventListener('pointermove', e => {
+  growBubble(e.pointerId);
+});
+canvas.addEventListener('pointerup', e => {
+  releaseBubble(e.pointerId);
+});
+canvas.addEventListener('pointercancel', e => {
+  releaseBubble(e.pointerId);
+});
+
+animate();
+</script>
+</body>
+</html>
