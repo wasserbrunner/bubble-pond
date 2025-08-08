@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
 <title>Magic Bubble Pond</title>
 <style>
   html, body {
@@ -10,10 +10,15 @@
     padding: 0;
     overflow: hidden;
     background: linear-gradient(#66ccff, #003366);
+    height: 100%;
+    width: 100%;
     touch-action: none;
   }
   canvas {
     display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
   }
 </style>
 </head>
@@ -23,7 +28,6 @@
 const canvas = document.getElementById('pond');
 const ctx = canvas.getContext('2d');
 let bubbles = [];
-// Animal emoji to name mapping for speech
 let animals = [
   {emoji:'🐟', name:'fish'},
   {emoji:'🦋', name:'butterfly'},
@@ -35,11 +39,27 @@ let animals = [
 ];
 const popSound = new Audio('https://actions.google.com/sounds/v1/cartoon/pop.ogg');
 
+let availableVoices = [];
+function loadVoices() {
+  availableVoices = speechSynthesis.getVoices();
+  if (availableVoices.length === 0) {
+    speechSynthesis.onvoiceschanged = () => {
+      availableVoices = speechSynthesis.getVoices();
+    };
+  }
+}
+loadVoices();
+
+document.body.addEventListener('click', () => {
+  // This empty click ensures mobile Safari unlocks audio/speech
+}, {once: true});
+
 function resizeCanvas() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
 }
 window.addEventListener('resize', resizeCanvas);
+window.addEventListener('orientationchange', resizeCanvas);
 resizeCanvas();
 
 function randomColor() {
@@ -68,7 +88,7 @@ class Bubble {
       this.y += this.vy;
     } else {
       this.animalY += this.animalVy;
-      this.animalVy += 0.15; // gravity
+      this.animalVy += 0.15;
     }
   }
   draw() {
@@ -120,11 +140,13 @@ function animate() {
 }
 
 function speakAnimal(name) {
-  const utterance = new SpeechSynthesisUtterance(name);
-  utterance.pitch = 1;
-  utterance.rate = 1;
-  utterance.voice = speechSynthesis.getVoices().find(v => v.name.toLowerCase().includes('female')) || null;
-  speechSynthesis.speak(utterance);
+  if ('speechSynthesis' in window && availableVoices.length > 0) {
+    const utterance = new SpeechSynthesisUtterance(name);
+    utterance.pitch = 1;
+    utterance.rate = 1;
+    utterance.voice = availableVoices.find(v => v.name.toLowerCase().includes('female')) || availableVoices[0];
+    speechSynthesis.speak(utterance);
+  }
 }
 
 function popBubble(x, y) {
@@ -137,7 +159,7 @@ function popBubble(x, y) {
       b.animalY = b.y;
       b.animalVy = -2;
       popSound.currentTime = 0;
-      popSound.play();
+      popSound.play().catch(()=>{});
       speakAnimal(b.animalName);
       return true;
     }
@@ -164,9 +186,18 @@ function releaseBubble(id) {
   }
 }
 
+function getPointerPos(e) {
+  if (e.touches && e.touches.length > 0) {
+    return {x: e.touches[0].clientX, y: e.touches[0].clientY};
+  } else {
+    return {x: e.clientX, y: e.clientY};
+  }
+}
+
 canvas.addEventListener('pointerdown', e => {
-  if (!popBubble(e.clientX, e.clientY)) {
-    startBubble(e.pointerId, e.clientX, e.clientY);
+  const pos = getPointerPos(e);
+  if (!popBubble(pos.x, pos.y)) {
+    startBubble(e.pointerId, pos.x, pos.y);
   }
 });
 canvas.addEventListener('pointermove', e => {
@@ -183,3 +214,4 @@ animate();
 </script>
 </body>
 </html>
+
