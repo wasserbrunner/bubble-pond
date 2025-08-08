@@ -40,18 +40,70 @@ let animals = [
 const dino = {emoji:'🦖', name:'dinosaur', rare:true, color:'#ffd700', sound:new Audio('https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg')};
 const popSound = new Audio('https://actions.google.com/sounds/v1/cartoon/pop.ogg');
 
+// ------------------ Speech (iOS-safe) ------------------
 let availableVoices = [];
-function loadVoices() {
+let speechReady = false;
+let voicesPollId = null;
+
+function pickFemaleVoice(voices) {
+  const preferred = ['samantha','ava','victoria','karen','tessa','moira','allison','nicky']; // common iOS/en voices
+  return voices.find(v => preferred.some(p => (v.name||'').toLowerCase().includes(p)))
+      || voices.find(v => (v.name||'').toLowerCase().includes('female'))
+      || voices[0] || null;
+}
+
+function cacheVoices() {
   availableVoices = speechSynthesis.getVoices();
-  if (availableVoices.length === 0) {
-    speechSynthesis.onvoiceschanged = () => {
-      availableVoices = speechSynthesis.getVoices();
-    };
+  if (availableVoices.length) {
+    speechReady = true;
+    if (voicesPollId) { clearInterval(voicesPollId); voicesPollId = null; }
   }
 }
-loadVoices();
 
-document.body.addEventListener('click', () => {}, {once: true});
+function warmupSpeech() {
+  if (!('speechSynthesis' in window)) return;
+  cacheVoices();
+  // iOS often needs a first speak after a user gesture to unlock voices
+  const u = new SpeechSynthesisUtterance('ready');
+  u.volume = 0; // silent warmup
+  u.rate = 1;
+  u.pitch = 1;
+  try { speechSynthesis.speak(u); } catch (e) {}
+  // Keep polling until voices appear
+  if (!availableVoices.length && !voicesPollId) {
+    voicesPollId = setInterval(cacheVoices, 250);
+  }
+  // Also listen for the async event
+  speechSynthesis.onvoiceschanged = cacheVoices;
+}
+
+// Call warmup on first *actual* user gesture
+let unlocked = false;
+function ensureUnlocked() {
+  if (unlocked) return;
+  unlocked = true;
+  warmupSpeech();
+  // also start/cue any mobile audio policies
+  if (popSound && popSound.play) { popSound.play().then(()=>popSound.pause()).catch(()=>{}); }
+  if (dino.sound && dino.sound.play) { dino.sound.play().then(()=>dino.sound.pause()).catch(()=>{}); }
+}
+
+function speakAnimal(name) {
+  if (!('speechSynthesis' in window)) return;
+  // If voices not ready yet, retry shortly (max 1s window)
+  if (!speechReady) {
+    setTimeout(() => speakAnimal(name), 150);
+    return;
+  }
+  const utterance = new SpeechSynthesisUtterance(name);
+  utterance.pitch = 1;
+  utterance.rate = 1;
+  const voice = pickFemaleVoice(availableVoices);
+  if (voice) utterance.voice = voice;
+  utterance.lang = voice?.lang || 'en-US';
+  try { speechSynthesis.speak(utterance); } catch (e) {}
+}
+// -------------------------------------------------------
 
 function resizeCanvas() {
   canvas.width = window.innerWidth;
@@ -175,16 +227,6 @@ function animate() {
   requestAnimationFrame(animate);
 }
 
-function speakAnimal(name) {
-  if ('speechSynthesis' in window && availableVoices.length > 0) {
-    const utterance = new SpeechSynthesisUtterance(name);
-    utterance.pitch = 1;
-    utterance.rate = 1;
-    utterance.voice = availableVoices.find(v => v.name.toLowerCase().includes('female')) || availableVoices[0];
-    speechSynthesis.speak(utterance);
-  }
-}
-
 function popBubble(x, y) {
   for (let i = 0; i < bubbles.length; i++) {
     let b = bubbles[i];
@@ -205,6 +247,7 @@ function popBubble(x, y) {
           size: Math.random() * 4 + 2
         });
       }
+      ensureUnlocked();
       if (b.isRare) {
         dino.sound.currentTime = 0;
         dino.sound.play().catch(()=>{});
@@ -222,6 +265,7 @@ function popBubble(x, y) {
 let growingBubbles = {};
 
 function startBubble(id, x, y) {
+  ensureUnlocked();
   growingBubbles[id] = {x, y, size: 50};
 }
 
